@@ -26,6 +26,7 @@ NewFolder = args.folder
 Danmaku = args.danmaku
 File = args.file
 Save = args.save
+Danmaku2Ass='danmaku2ass.exe' if os.path.exists('danmaku2ass.exe') else 'python danmaku2ass.py'
 
 # 利用os.walk仅查找目录，返回列表
 def DirFolder(n): return [
@@ -71,7 +72,7 @@ def MergeVideo(fn):
       os.mkdir(folder)
      ffmpeg.append('{} -i "{}" -i "{}" -c copy "{}.mp4"'.format(FFmpeg,SearchFile(i,'video.m4s'),SearchFile(i,'audio.m4s'),fl))
      if Danmaku:
-       ffmpeg.append('python danmaku2ass.py "{}" -s {}x{} -fn "微软雅黑" -fs 48 -a 0.8 -dm 5 -ds 5 -o "{}"'.format(SearchFile(i,'danmaku.xml'),jsonData['page_data']['width'],jsonData['page_data']['height'],fl+'.ass'))
+       ffmpeg.append('{} "{}" -s {}x{} -fn "微软雅黑" -fs 48 -a 0.8 -dm 5 -ds 5 -o "{}"'.format(Danmaku2Ass,SearchFile(i,'danmaku.xml'),jsonData['page_data']['width'],jsonData['page_data']['height'],fl+'.ass'))
    else:
      if jsonData['type_tag']=='64':
         fl=Save+'\\'+Filter(ReadTitle(jsonData))
@@ -79,7 +80,7 @@ def MergeVideo(fn):
         fl=Save+'\\'+Filter(jsonData['title'])+'-'+Filter(ReadTitle(jsonData))
      ffmpeg.append('{} -i "{}" -i "{}" -c copy "{}.mp4"'.format(FFmpeg,SearchFile(i,'video.m4s'),SearchFile(i,'audio.m4s'),fl))
      if Danmaku:
-       ffmpeg.append('python danmaku2ass.py "{}" -s {}x{} -fn "微软雅黑" -fs 48 -a 0.8 -dm 5 -ds 5 -o "{}"'.format(SearchFile(i,'danmaku.xml'),jsonData['page_data']['width'],jsonData['page_data']['height'],fl+'.ass'))
+       ffmpeg.append('{} "{}" -s {}x{} -fn "微软雅黑" -fs 48 -a 0.8 -dm 5 -ds 5 -o "{}"'.format(Danmaku2Ass,SearchFile(i,'danmaku.xml'),jsonData['page_data']['width'],jsonData['page_data']['height'],fl+'.ass'))
     
   return ffmpeg
 for i in DirFolder(File):
