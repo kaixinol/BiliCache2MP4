@@ -73,7 +73,7 @@ def MergeVideo(fn):
      ffmpeg.append('{} -i "{}" -i "{}" -c copy "{}.mp4"'.format(FFmpeg,SearchFile(i,'video.m4s'),SearchFile(i,'audio.m4s'),fl))
      if AddAuthorMsg:
         with open(folder+'author.txt','w+') as f:
-         f.write(jsonData['owner_name']+'\n'+str(jsonData['owner_id'])+'\n'+jsonData['bvid']+'\n'+jsonData['owner_avatar'])
+         f.write(jsonData['owner_name']+'\n'+str(jsonData['owner_id'])+'\n'+jsonData['bvid']+'\n'+jsonData['owner_avatar'] if 'owner_avatar' in jsonData else '')
      if Danmaku:
        ffmpeg.append('{} "{}" -s {}x{} -fn "微软雅黑" -fs 48 -a 0.8 -dm 5 -ds 5 -o "{}"'.format(Danmaku2Ass,SearchFile(i,'danmaku.xml'),jsonData['page_data']['width'],jsonData['page_data']['height'],fl+'.ass'))
    else:
