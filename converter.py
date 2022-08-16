@@ -6,7 +6,7 @@ import argparse
 global FFmpeg
 global NewFolder
 global Danmuku
-
+# 命令行解析
 parser = argparse.ArgumentParser()
 parser.add_argument('-f', '--ffmpeg', type=str,
                     default="ffmpeg", help="FFmpeg的路径，默认为当前目录")
@@ -20,21 +20,21 @@ parser.add_argument('-s', '--save', type=str,
 
 args = parser.parse_args()
 
-
+# 初始化
 FFmpeg = args.ffmpeg
 NewFolder = args.folder
 Danmaku = args.danmaku
 File = args.file
 Save = args.save
 
-
+# 利用os.walk仅查找目录，返回列表
 def DirFolder(n): return [
     n+'/'+i if not os.path.isdir(os.path.realpath((n+i))) else n+i for i in os.listdir(n)]
 
-
+# 标题中的非法字符过滤
 def Filter(t): return re.sub('[\\\/:*?"<>|]', " ", t)
 
-
+# 搜索文件
 def SearchFile(name: str, s: str):
     Filelist = []
     for home, dirs, files in os.walk(name):
@@ -52,13 +52,14 @@ def ReadJson(n: str):
     except:
         return None
 
-
+# 有的json没有part，只有title
 def ReadTitle(load_dict: dict):
     if 'part' not in load_dict['page_data']:
         return Filter(load_dict['title'])
     else:
         return Filter(load_dict['page_data']['part'])
 
+# 生成指令list
 def MergeVideo(fn):
   ffmpeg=[]
   for i in DirFolder(fn):
