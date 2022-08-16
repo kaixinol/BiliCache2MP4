@@ -4,7 +4,7 @@
 Python 3.8+
 ## Usage
 ```
-usage: 遍历.py [-h] [-f FFMPEG] [-folder] [-danmaku] [-s SAVE] FILE
+usage: convert.py [-h] [-f FFMPEG] [-folder] [-danmaku] [-s SAVE] FILE
 
 positional arguments:
   FILE                  b站缓存文件文件夹
