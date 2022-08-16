@@ -27,6 +27,7 @@ Danmaku = args.danmaku
 File = args.file
 Save = args.save
 Danmaku2Ass='danmaku2ass.exe' if os.path.exists('danmaku2ass.exe') else 'python danmaku2ass.py'
+AddAuthorMsg=False # 个人的需求，可以在文件夹下方生成Author.txt，方便查看原作者
 
 # 利用os.walk仅查找目录，返回列表
 def DirFolder(n): return [
@@ -71,6 +72,9 @@ def MergeVideo(fn):
      if not os.path.exists(folder):
       os.mkdir(folder)
      ffmpeg.append('{} -i "{}" -i "{}" -c copy "{}.mp4"'.format(FFmpeg,SearchFile(i,'video.m4s'),SearchFile(i,'audio.m4s'),fl))
+     if AddAuthorMsg:
+        with open(folder+'author.txt','w+') as f:
+         f.write(jsonData['owner_name']+'\n'+jsonData['owner_id']+'\n'+jsonData['bvid']+'\n'+jsonData['owner_avatar'])
      if Danmaku:
        ffmpeg.append('{} "{}" -s {}x{} -fn "微软雅黑" -fs 48 -a 0.8 -dm 5 -ds 5 -o "{}"'.format(Danmaku2Ass,SearchFile(i,'danmaku.xml'),jsonData['page_data']['width'],jsonData['page_data']['height'],fl+'.ass'))
    else:
