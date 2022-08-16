@@ -1,4 +1,3 @@
-
 import os
 import json
 import re
@@ -16,7 +15,7 @@ parser.add_argument('-danmaku', action='store_true',
                     default=False, help="是否转换.xml到弹幕文件.aas")
 parser.add_argument('file', metavar='FILE', help='b站缓存文件文件夹')
 parser.add_argument('-s', '--save', type=str,
-                    default=os.getcwd()+'\\', help='释放的位置，默认为本脚本根目录')
+                    default=os.getcwd()+'\\', help='释放的位置，默认为本脚本所在目录')
 
 args = parser.parse_args()
 
@@ -74,7 +73,7 @@ def MergeVideo(fn):
      ffmpeg.append('{} -i "{}" -i "{}" -c copy "{}.mp4"'.format(FFmpeg,SearchFile(i,'video.m4s'),SearchFile(i,'audio.m4s'),fl))
      if AddAuthorMsg:
         with open(folder+'author.txt','w+') as f:
-         f.write(jsonData['owner_name']+'\n'+jsonData['owner_id']+'\n'+jsonData['bvid']+'\n'+jsonData['owner_avatar'])
+         f.write(jsonData['owner_name']+'\n'+str(jsonData['owner_id'])+'\n'+jsonData['bvid']+'\n'+jsonData['owner_avatar'])
      if Danmaku:
        ffmpeg.append('{} "{}" -s {}x{} -fn "微软雅黑" -fs 48 -a 0.8 -dm 5 -ds 5 -o "{}"'.format(Danmaku2Ass,SearchFile(i,'danmaku.xml'),jsonData['page_data']['width'],jsonData['page_data']['height'],fl+'.ass'))
    else:
