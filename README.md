@@ -1,5 +1,7 @@
 # BiliCache2MP4
 哔哩哔哩Biliili视频缓存的*.m4s文件批量转换为.mp4文件工具。支持同时将弹幕转换，支持每个视频一个文件夹
+## 下载
+https://github.com/kaixinol/BiliCache2MP4/releases/
 ## 运行环境
 Python 3.8+
 ## Usage
