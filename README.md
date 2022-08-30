@@ -3,7 +3,9 @@
 ## 下载
 https://github.com/kaixinol/BiliCache2MP4/releases/
 ## 运行环境
-Python 3.8+
+`.py`:Python 3.8+
+
+`.exe`:无
 ## Usage
 ```
 usage: convert.py [-h] [-f FFMPEG] [-folder] [-danmaku] [-s SAVE] FILE
