@@ -2,9 +2,6 @@ import os
 import json
 import re
 import argparse
-global FFmpeg
-global NewFolder
-global Danmuku
 # 命令行解析
 parser = argparse.ArgumentParser()
 parser.add_argument('-f', '--ffmpeg', type=str,
