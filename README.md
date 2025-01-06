@@ -5,7 +5,8 @@
 https://github.com/kaixinol/BiliCache2MP4/releases/
 ## 类Unix系统
 ```bash
-
+pip install git+https://github.com/kaixinol/BiliCache2MP4.git
+python -m converter 缓存文件夹 -o 释放文件夹 -danmaku -folder
 ```
 下载[danmaku2ass.py](https://github.com/m13253/danmaku2ass/raw/master/danmaku2ass.py)到本程序同一目录
 ## Usage
