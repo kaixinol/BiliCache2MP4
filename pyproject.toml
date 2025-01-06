@@ -1,0 +1,18 @@
+[project]
+name = "BiliCache2MP4"
+version = "2.2"
+description = "Convert Bilibili cache files to MP4"
+authors = [
+    {name = "kaesinol", email = "keiplyer@gmail.com"},
+]
+dependencies = ["loguru>=0.7.3"]
+requires-python = ">=3.10"
+readme = "README.md"
+license = {text = "MIT"}
+
+[project.scripts]
+main = "BiliCache2MP4.py"
+
+[tool.pdm]
+distribution = false
+

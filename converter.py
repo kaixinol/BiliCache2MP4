@@ -4,7 +4,6 @@ import multiprocessing
 from pathlib import Path
 import re
 import argparse
-import time
 from loguru import logger
 import subprocess
 
@@ -13,13 +12,19 @@ parser = argparse.ArgumentParser()
 parser.add_argument(
     "-f", "--ffmpeg", type=str, default="ffmpeg", help="FFmpeg的路径，默认为当前目录"
 )
-parser.add_argument("-folder", action="store_true", default=False, help="是否每一个视频一个文件夹")
+parser.add_argument(
+    "-folder", action="store_true", default=False, help="是否每一个视频一个文件夹"
+)
 parser.add_argument(
     "-danmaku", action="store_true", default=False, help="是否转换.xml到弹幕文件.aas"
 )
 parser.add_argument("file", metavar="FILE", help="b站缓存文件文件夹")
 parser.add_argument(
-    "-s", "--save", type=str, default=Path.cwd(), help="释放的位置，默认为本脚本所在目录"
+    "-o",
+    "--output",
+    type=str,
+    default=Path.cwd(),
+    help="释放的位置，默认为本脚本所在目录",
 )
 parser.add_argument(
     "-t",
@@ -36,19 +41,19 @@ danmaku2ass = (
 )
 add_author_msg = False  # 个人的需求，可以在文件夹下方生成Author.txt，方便查看原作者
 args.file = Path(args.file)
-args.save = Path(args.save)
+args.output = Path(args.output)
 if not Path(args.ffmpeg).exists():
     parser.error("ffmpeg 不存在！")
-args.ffmpeg += " -hide_banner -loglevel error"
+args.ffmpeg += " -hide_banner -loglevel error -n"
 
 
-# 利用os.walk仅查找目录，返回列表
-def dir_folder(n):
+# 仅查找目录，返回列表
+def dir_folder(n: str):
     return [n / i if not (n / i).is_dir() else n / i for i in Path(n).iterdir()]
 
 
 # 标题中的非法字符过滤
-def illegal_filter(t):
+def illegal_filter(t: str):
     return re.sub(r'[\/:"*?<>|]', " ", t)
 
 
@@ -62,12 +67,9 @@ def search_file(name: str, s: str):
 
 
 def read_json(n: str):
-    try:
-        with open(Path(n), "r", encoding="utf-8") as load_f:
-            load_dict = json.load(load_f)
-        return load_dict
-    except:
-        return None
+    with open(Path(n), "r", encoding="utf-8") as load_f:
+        load_dict = json.load(load_f)
+    return load_dict
 
 
 # 有的json没有part，只有title
@@ -79,22 +81,23 @@ def read_title(load_dict: dict):
 
 
 # 生成指令list
-def merge_video(fn):
+@logger.catch
+def generate_generate_merge_video(fn: str):
     cmd = []
     for i in dir_folder(fn):
         json_data = read_json(search_file(i, "entry.json"))
         if args.folder:
             mp4 = (
-                args.save
+                args.output
                 / illegal_filter(json_data["title"])
                 / (illegal_filter(read_title(json_data) + ".mp4"))
             )
             ass = (
-                args.save
+                args.output
                 / illegal_filter(json_data["title"])
                 / (illegal_filter(read_title(json_data) + ".ass"))
             )
-            folder = args.save / illegal_filter(json_data["title"])
+            folder = args.output / illegal_filter(json_data["title"])
             if not folder.exists():
                 folder.mkdir(parents=True)
             if not search_file(i, "audio.m4s"):
@@ -116,23 +119,21 @@ def merge_video(fn):
                 )
         else:
             if json_data["type_tag"] == "64":
-                mp4 = args.save / (illegal_filter(read_title(json_data)) + ".mp4")
-                ass = args.save / (illegal_filter(read_title(json_data)) + ".ass")
+                mp4 = args.output / (illegal_filter(read_title(json_data)) + ".mp4")
+                ass = args.output / (illegal_filter(read_title(json_data)) + ".ass")
             else:
-                mp4 = args.save / (
+                mp4 = args.output / (
                     illegal_filter(json_data["title"])
                     + "-"
                     + (illegal_filter(read_title(json_data)) + ".mp4")
                 )
-                ass = args.save / (
+                ass = args.output / (
                     illegal_filter(json_data["title"])
                     + "-"
                     + (illegal_filter(read_title(json_data)) + ".ass")
                 )
             if not search_file(i, "audio.m4s"):
-                cmd.append(
-                    f'{args.ffmpeg} -i "{search_file(i,"video.m4s")}" "{mp4}"'
-                )
+                cmd.append(f'{args.ffmpeg} -i "{search_file(i,"video.m4s")}" "{mp4}"')
             else:
                 cmd.append(
                     f'{args.ffmpeg} -i "{search_file(i,"video.m4s")}" -i "{search_file(i,"audio.m4s")}" -c copy "{mp4}"'
@@ -146,7 +147,8 @@ def merge_video(fn):
     return cmd
 
 
-def run_command(command):
+@logger.catch
+def run_command(command: str):
     try:
         subprocess.run(
             command,
@@ -157,18 +159,16 @@ def run_command(command):
             encoding="UTF-8",
             errors="ignore",
         )
+        print(command.replace(args.ffmpeg,"ffmpeg"))
     except subprocess.CalledProcessError as e:
         logger.error(f"{command}\n{e.stderr}")
 
 
 all_folder = dir_folder(args.file)
 logger.info(f"共发现{len(all_folder)}个视频组")
-
+if not Path(args.output).exists():
+    Path(args.output).mkdir(parents=True)
 for i in all_folder:
-    try:
-        buffer = merge_video(i)
-    except:
-        logger.error(i)
-        continue
+    buffer = generate_merge_video(i)
     with ThreadPoolExecutor(max_workers=args.thread) as executor:
         executor.map(run_command, buffer)

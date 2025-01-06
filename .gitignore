@@ -127,3 +127,5 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+danmaku2ass.py
+.pdm-python
