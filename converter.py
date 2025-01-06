@@ -82,7 +82,7 @@ def read_title(load_dict: dict):
 
 # 生成指令list
 @logger.catch
-def generate_generate_merge_video(fn: str):
+def generate_merge_video(fn: str):
     cmd = []
     for i in dir_folder(fn):
         json_data = read_json(search_file(i, "entry.json"))

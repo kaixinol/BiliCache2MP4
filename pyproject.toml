@@ -11,7 +11,7 @@ readme = "README.md"
 license = {text = "MIT"}
 
 [project.scripts]
-main = "BiliCache2MP4.py"
+main = "converter.py"
 
 [tool.pdm]
 distribution = false
