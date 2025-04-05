@@ -10,8 +10,8 @@ https://github.com/kaixinol/BiliCache2MP4/releases/
 需要先行安裝`ffmpeg`，保證在環境變量裏。
 ```bash
 pip install loguru
-curl -O https://github.com/m13253/danmaku2ass/raw/master/danmaku2ass.py
-curl -O https://github.com/kaixinol/BiliCache2MP4/raw/refs/heads/main/converter.py
+curl -O -L https://github.com/m13253/danmaku2ass/raw/master/danmaku2ass.py
+curl -O -L https://github.com/kaixinol/BiliCache2MP4/raw/refs/heads/main/converter.py
 python converter.py 缓存文件夹 -o 释放文件夹 -danmaku -folder
 ```
 ## Usage
