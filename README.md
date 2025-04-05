@@ -4,6 +4,7 @@
 ## Windows(二进制文件)
 https://github.com/kaixinol/BiliCache2MP4/releases/
 ## 类Unix系统
+需要先行安裝`ffmpeg`，保證在環境變量裏。
 ```bash
 pip install loguru
 curl -O https://github.com/m13253/danmaku2ass/raw/master/danmaku2ass.py
