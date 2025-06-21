@@ -82,7 +82,7 @@ def dir_folder(n: str):
 
 # 标题中的非法字符过滤
 def illegal_filter(t: str):
-    return re.sub(r'[\/:"*?<>|]', " ", t).rstrip()
+    return re.sub(r'[\/:"*?<>|]', " ", t).rstrip().strip('.')
 
 
 # 搜索文件
