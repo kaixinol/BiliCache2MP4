@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 import json
 import multiprocessing
 from pathlib import Path
@@ -7,8 +8,9 @@ import argparse
 from loguru import logger
 import subprocess
 import shutil
+import xml.etree.ElementTree as ET
+from curl_cffi import requests
 
-# 命令行解析
 parser = argparse.ArgumentParser()
 parser.add_argument(
     "-f", "--ffmpeg", type=str, help="FFmpeg的路径，默认从环境变量中寻找"
@@ -17,7 +19,7 @@ parser.add_argument(
     "-folder", action="store_true", default=False, help="是否每一个视频一个文件夹"
 )
 parser.add_argument(
-    "-danmaku", action="store_true", default=False, help="是否转换.xml到弹幕文件.aas"
+    "-danmaku", action="store_true", default=False, help="是否转换.xml到弹幕文件.ass"
 )
 parser.add_argument("file", metavar="FILE", help="b站缓存文件文件夹")
 parser.add_argument(
@@ -34,13 +36,13 @@ parser.add_argument(
     default=multiprocessing.cpu_count(),
     help="多线程数，默认为cpu当前核数",
 )
+parser.add_argument("-nfo", action="store_true", default=False, help="是否添加nfo文件")
 args = parser.parse_args()
 
 # 初始化
 danmaku2ass = (
     "danmaku2ass.exe" if Path("danmaku2ass.exe").exists() else "python danmaku2ass.py"
 )
-add_author_msg = False  # 个人的需求，可以在文件夹下方生成Author.txt，方便查看原作者
 args.file = Path(args.file).resolve()  # 使用绝对路径
 args.output = Path(args.output).resolve()  # 使用绝对路径
 
@@ -67,6 +69,49 @@ except (subprocess.SubprocessError, FileNotFoundError):
     parser.error(f"ffmpeg 在路径 '{ffmpeg_path}' 不可用")
 
 
+def write_nfo(data: dict, path: Path, mode="folder"):
+    def download():
+        url = data["cover"]
+        response = requests.get(url)
+        if response.status_code == 200:
+            with open(
+                (path.parent / f"{illegal_filter(data['title'])}-cover.png")
+                if mode != "folder"
+                else (path.parent / "cover.png"),
+                "wb",
+            ) as f:
+                f.write(response.content)
+        else:
+            logger.error(f"下载封面失败: {url}，状态码: {response.status_code}")
+
+    movie = ET.Element("movie")
+
+    title = ET.SubElement(movie, "title")
+    title.text = data["title"]
+
+    credits = ET.SubElement(movie, "credits")
+    if data.get("owner_id"):
+        credits.text = f"{data['owner_name']}[{data['owner_id']}]"
+    else:
+        credits.text = "UNKNOWN"
+
+    year = ET.SubElement(movie, "year")
+    year.text = str(datetime.fromtimestamp(data["time_update_stamp"] / 1000).year)
+
+    uniqueid = ET.SubElement(movie, "uniqueid", {"type": "bilibili"})
+    uniqueid.text = f"av{data['avid']}"
+
+    aired = ET.SubElement(movie, "aired")
+    aired.text = datetime.fromtimestamp(data["time_update_stamp"] / 1000).strftime(
+        "%Y-%m-%d"
+    )
+
+    download()
+
+    # 写入时进行简单缩进格式化
+    tree = ET.ElementTree(movie)
+    tree.write(str(path), encoding="utf-8", xml_declaration=True)
+
 # 仅查找目录，返回列表
 def dir_folder(n: str):
     try:
@@ -82,7 +127,7 @@ def dir_folder(n: str):
 
 # 标题中的非法字符过滤
 def illegal_filter(t: str):
-    return re.sub(r'[\/:"*?<>|]', " ", t).rstrip().strip('.')
+    return re.sub(r'[\/:"*?<>|]', " ", t).rstrip().strip(".")
 
 
 # 搜索文件
@@ -143,7 +188,9 @@ def generate_merge_video(fn: str):
             filtered_title = illegal_filter(json_data["title"])
             filtered_part_title = read_title(json_data)
 
-            video_file = search_file(i, "video.m4s")
+            video_file = search_file(i, "video.m4s") or list(
+                (i / "lua.flv.bili2api.80").rglob("*.blv")
+            )
             if not video_file:
                 logger.warning(f"在 {i} 中找不到视频文件")
                 continue
@@ -157,18 +204,16 @@ def generate_merge_video(fn: str):
                     folder.mkdir(parents=True)
 
                 audio_file = search_file(i, "audio.m4s")
-                if not audio_file:
-                    cmd.append(f'{ffmpeg_cmd} -i "{video_file}" "{mp4}"')
-                else:
-                    cmd.append(
-                        f'{ffmpeg_cmd} -i "{video_file}" -i "{audio_file}" -c copy "{mp4}"'
-                    )
-
-                if add_author_msg:
-                    with open(folder / "author.txt", "w+") as f:
-                        f.write(
-                            f"{json_data['owner_name']}\n{json_data['owner_id']}\n{json_data['bvid']}\n{json_data.get('owner_avatar', '')}"
+                if not isinstance(video_file, list):
+                    if not audio_file:
+                        cmd.append(f'{ffmpeg_cmd} -i "{video_file}" -c copy "{mp4}"')
+                    else:
+                        cmd.append(
+                            f'{ffmpeg_cmd} -i "{video_file}" -i "{audio_file}" -c copy "{mp4}"'
                         )
+                else:  # blv
+                    input_files = " ".join(f'-i "{i}"' for i in video_file)
+                    cmd.append(f"{ffmpeg_cmd} {input_files} -c copy {mp4}")
 
                 if args.danmaku:
                     danmaku_file = search_file(i, "danmaku.xml")
@@ -177,6 +222,10 @@ def generate_merge_video(fn: str):
                         continue
                     cmd.append(
                         f'{danmaku2ass} "{danmaku_file}" -s {json_data["page_data"]["width"]}x{json_data["page_data"]["height"]} -fn "微软雅黑" -fs 48 -a 0.8 -dm 5 -ds 5 -o "{ass}"'
+                    )
+                if args.nfo:
+                    write_nfo(
+                        json_data, folder / (filtered_part_title + ".nfo")
                     )
             else:
                 if json_data.get("type_tag") == "64":
@@ -189,15 +238,17 @@ def generate_merge_video(fn: str):
                     ass = args.output / (
                         filtered_title + "-" + filtered_part_title + ".ass"
                     )
-
-                audio_file = search_file(i, "audio.m4s")
-                if not audio_file:
-                    cmd.append(f'{ffmpeg_cmd} -i "{video_file}" "{mp4}"')
+                if not isinstance(video_file, list):
+                    audio_file = search_file(i, "audio.m4s")
+                    if not audio_file:
+                        cmd.append(f'{ffmpeg_cmd} -i "{video_file}" -c copy "{mp4}"')
+                    else:
+                        cmd.append(
+                            f'{ffmpeg_cmd} -i "{video_file}" -i "{audio_file}" -c copy "{mp4}"'
+                        )
                 else:
-                    cmd.append(
-                        f'{ffmpeg_cmd} -i "{video_file}" -i "{audio_file}" -c copy "{mp4}"'
-                    )
-
+                    input_files = " ".join(f'-i "{i}"' for i in video_file)
+                    cmd.append(f"{ffmpeg_cmd} {input_files} -c copy {mp4}")
                 if args.danmaku:
                     danmaku_file = search_file(i, "danmaku.xml")
                     if not danmaku_file:
@@ -206,6 +257,8 @@ def generate_merge_video(fn: str):
                     cmd.append(
                         f'{danmaku2ass} "{danmaku_file}" -s {json_data["page_data"]["width"]}x{json_data["page_data"]["height"]} -fn "微软雅黑" -fs 48 -a 0.8 -dm 5 -ds 5 -o "{ass}"'
                     )
+                if args.nfo:
+                    write_nfo(json_data, args.output / (filtered_title + ".nfo"),'file')
         return cmd
     except Exception as e:
         logger.error(f"生成合并视频命令时出错: {e}")
