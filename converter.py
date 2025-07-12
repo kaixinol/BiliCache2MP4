@@ -10,7 +10,14 @@ import subprocess
 import shutil
 import xml.etree.ElementTree as ET
 from curl_cffi import requests
+import sys
+import threading
 
+# 初始化日志
+logger.remove()
+logger.add(sys.stderr, level="DEBUG", diagnose=True, backtrace=True)
+
+# 参数解析
 parser = argparse.ArgumentParser()
 parser.add_argument(
     "-f", "--ffmpeg", type=str, help="FFmpeg的路径，默认从环境变量中寻找"
@@ -38,24 +45,20 @@ parser.add_argument(
 )
 parser.add_argument("-nfo", action="store_true", default=False, help="是否添加nfo文件")
 args = parser.parse_args()
+args.file = Path(args.file).resolve()
+args.output = Path(args.output).resolve()
 
-# 初始化
-danmaku2ass = (
-    "danmaku2ass.exe" if Path("danmaku2ass.exe").exists() else "python danmaku2ass.py"
+# 确定 danmaku2ass 命令列表
+danmaku2ass_cmd = (
+    ["danmaku2ass.exe"]
+    if Path("danmaku2ass.exe").exists()
+    else ["python", "danmaku2ass.py"]
 )
-args.file = Path(args.file).resolve()  # 使用绝对路径
-args.output = Path(args.output).resolve()  # 使用绝对路径
 
-# 确定 ffmpeg 路径
-if args.ffmpeg:
-    ffmpeg_path = args.ffmpeg
-else:
-    # 从环境变量中寻找 ffmpeg
-    ffmpeg_path = shutil.which("ffmpeg")
-    if not ffmpeg_path:
-        parser.error("无法在环境变量中找到 ffmpeg，请使用 -f 参数指定路径")
-
-# 验证 ffmpeg 是否可用
+# 确定 ffmpeg 路径和命令列表
+ffmpeg_path = args.ffmpeg or shutil.which("ffmpeg")
+if not ffmpeg_path:
+    parser.error("无法在环境变量中找到 ffmpeg，请使用 -f 参数指定路径")
 try:
     subprocess.run(
         [ffmpeg_path, "-version"],
@@ -63,239 +66,178 @@ try:
         stderr=subprocess.PIPE,
         check=True,
     )
-    # 添加 ffmpeg 参数
-    ffmpeg_cmd = f'"{ffmpeg_path}" -hide_banner -loglevel error -n'
+    ffmpeg_cmd = [ffmpeg_path, "-hide_banner", "-loglevel", "error", "-n"]
 except (subprocess.SubprocessError, FileNotFoundError):
     parser.error(f"ffmpeg 在路径 '{ffmpeg_path}' 不可用")
 
 
-def write_nfo(data: dict, path: Path, mode="folder"):
-    def download():
+def illegal_filter(name: str, maxlen: int = 48) -> str:
+    t = re.sub(r'[<>:"/\\|?*]', " ", name)
+    t = t.rstrip(" .")
+    return t[:maxlen]
+
+
+def dir_folder(path: Path):
+    if not path.exists():
+        logger.error(f"路径不存在: {path}")
+        return []
+    return [p for p in path.iterdir() if p.is_dir()]
+
+
+def search_file(dir_path: Path, pattern: str):
+    matches = [p for p in dir_path.rglob("*") if pattern in p.name]
+    if not matches:
+        return None
+    return matches[0] if len(matches) == 1 else matches
+
+
+def read_json(path: Path):
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception as e:
+        logger.error(f"读取JSON失败 {path}: {e}")
+        return None
+
+
+def write_nfo(data: dict, path: Path, mode: str = "folder"):
+    def download_cover():
         url = data["cover"]
-        response = requests.get(url)
-        if response.status_code == 200:
-            with open(
-                (path.parent / f"{illegal_filter(data['title'])}-cover.png")
-                if mode != "folder"
-                else (path.parent / "cover.png"),
-                "wb",
-            ) as f:
-                f.write(response.content)
+        out = path.parent / (
+            f"{illegal_filter(data['title'])}-cover.png"
+            if mode != "folder"
+            else "cover.png"
+        )
+        if out.exists():
+            return
+        resp = requests.get(url)
+        if resp.status_code == 200:
+            out.write_bytes(resp.content)
         else:
-            logger.error(f"下载封面失败: {url}，状态码: {response.status_code}")
+            logger.error(f"下载封面失败: {url} 状态 {resp.status_code}")
 
     movie = ET.Element("movie")
-
-    title = ET.SubElement(movie, "title")
-    title.text = data["title"]
-
+    ET.SubElement(movie, "title").text = data["title"]
     credits = ET.SubElement(movie, "credits")
-    if data.get("owner_id"):
-        credits.text = f"{data['owner_name']}[{data['owner_id']}]"
-    else:
-        credits.text = "UNKNOWN"
-
-    year = ET.SubElement(movie, "year")
-    year.text = str(datetime.fromtimestamp(data["time_update_stamp"] / 1000).year)
-
-    uniqueid = ET.SubElement(movie, "uniqueid", {"type": "bilibili"})
-    uniqueid.text = f"av{data['avid']}"
-
-    aired = ET.SubElement(movie, "aired")
-    aired.text = datetime.fromtimestamp(data["time_update_stamp"] / 1000).strftime(
-        "%Y-%m-%d"
+    credits.text = (
+        f"{data.get('owner_name', 'UNKNOWN')}[{data.get('owner_id', '')}]"
+        if data.get("owner_id")
+        else "UNKNOWN"
     )
-
-    download()
-
-    # 写入时进行简单缩进格式化
-    tree = ET.ElementTree(movie)
-    tree.write(str(path), encoding="utf-8", xml_declaration=True)
-
-# 仅查找目录，返回列表
-def dir_folder(n: str):
-    try:
-        path = Path(n).resolve()  # 转为绝对路径
-        if not path.exists():
-            logger.error(f"路径不存在: {path}")
-            return []
-        return [path / i for i in path.iterdir()]
-    except OSError as e:
-        logger.error(f"读取目录 {n} 时出错: {e}")
-        return []
+    ET.SubElement(movie, "year").text = str(
+        datetime.fromtimestamp(data["time_update_stamp"] / 1000).year
+    )
+    ET.SubElement(movie, "uniqueid", {"type": "bilibili"}).text = f"av{data['avid']}"
+    ET.SubElement(movie, "aired").text = datetime.fromtimestamp(
+        data["time_update_stamp"] / 1000
+    ).strftime("%Y-%m-%d")
+    download_cover()
+    ET.ElementTree(movie).write(path, encoding="utf-8", xml_declaration=True)
 
 
-# 标题中的非法字符过滤
-def illegal_filter(t: str):
-    return re.sub(r'[\/:"*?<>|]', " ", t).rstrip().strip(".")
+def build_ffmpeg_cmd(inputs: list[str], output: Path):
+    return ffmpeg_cmd + inputs + ["-c", "copy", str(output)]
 
 
-# 搜索文件
-def search_file(name: str, s: str):
-    try:
-        file_list = []
-        for path in Path(name).rglob("*"):
-            if s in path.name:
-                file_list.append(path)
-        return file_list[0] if len(file_list) == 1 else file_list
-    except OSError as e:
-        logger.error(f"搜索文件 {s} 时出错: {e}")
-        return None
+def build_danmaku_cmd(danmaku_path: Path, size: str, output: Path):
+    return danmaku2ass_cmd + [
+        str(danmaku_path),
+        "-s",
+        size,
+        "-fn",
+        "微软雅黑",
+        "-fs",
+        "48",
+        "-a",
+        "0.8",
+        "-dm",
+        "5",
+        "-ds",
+        "5",
+        "-o",
+        str(output),
+    ]
 
 
-def read_json(n: str):
-    try:
-        with open(Path(n), "r", encoding="utf-8") as load_f:
-            load_dict = json.load(load_f)
-        return load_dict
-    except OSError as e:
-        logger.error(f"读取JSON文件 {n} 时出错: {e}")
-        return None
+def generate_merge_video(group_dir: Path) -> list[list[str]]:
+    cmds = []
+    folders = dir_folder(group_dir)
+    logger.info(f"处理 {group_dir}: {len(folders)} 子文件夹")
+    for idx, item in enumerate(folders, start=1):
+        entry = search_file(item, "entry.json")
+        if not entry:
+            logger.warning(f"{item} 缺少 entry.json")
+            continue
+        data = read_json(Path(entry))
+        if not data:
+            continue
+        title = illegal_filter(data["title"])
+        part = illegal_filter(data["page_data"].get("part", data["title"]))
+        vid_file = search_file(item, "video.m4s")
+        if not vid_file:
+            flvs = list(item.rglob("lua.*"))
+            vid_file = list(flvs[0].rglob("*.blv")) if flvs else None
+        if not vid_file:
+            logger.warning(f"{item} 没有视频文件")
+            continue
 
-
-# 有的json没有part，只有title
-def read_title(load_dict: dict):
-    try:
-        if not load_dict:
-            return "未知标题"
-        if "part" not in load_dict["page_data"]:
-            return illegal_filter(load_dict["title"])
+        if args.folder:
+            out_dir = args.output / title
+            out_dir.mkdir(parents=True, exist_ok=True)
+            mp4 = out_dir / f"{part}.mp4"
+            ass = out_dir / f"{part}.ass"
         else:
-            return illegal_filter(load_dict["page_data"]["part"])
-    except OSError as e:
-        logger.error(f"读取标题时出错: {e}")
-        return "未知标题"
+            name = f"{title}-{part}.mp4" if idx > 1 else f"{title}.mp4"
+            mp4 = args.output / name
+            ass = args.output / name.replace(".mp4", ".ass")
 
+        inputs = []
+        if isinstance(vid_file, list):
+            for f in vid_file:
+                inputs += ["-i", str(f)]
+        else:
+            inputs += ["-i", str(vid_file)]
+            audio = search_file(item, "audio.m4s")
+            if audio:
+                inputs += ["-i", str(audio)]
+        cmds.append(build_ffmpeg_cmd(inputs, mp4))
 
-# 生成指令list
-def generate_merge_video(fn: str):
-    cmd = []
-    try:
-        folders = dir_folder(fn)
-        logger.info(f"处理目录: {fn}, 找到 {len(folders)} 个子文件夹")
+        if args.danmaku:
+            danmaku = search_file(item, "danmaku.xml")
+            if danmaku:
+                size = f"{data['page_data']['width']}x{data['page_data']['height']}"
+                cmds.append(build_danmaku_cmd(Path(danmaku), size, ass))
 
-        for i in folders:
-            entry_json = search_file(i, "entry.json")
-            if not entry_json:
-                logger.warning(f"在 {i} 中找不到 entry.json 文件")
-                continue
-
-            json_data = read_json(entry_json)
-            if not json_data:
-                logger.warning(f"无法读取 {entry_json} 文件")
-                continue
-
-            filtered_title = illegal_filter(json_data["title"])
-            filtered_part_title = read_title(json_data)
-
-            video_file = search_file(i, "video.m4s") or list(
-                (i / "lua.flv.bili2api.80").rglob("*.blv")
+        if args.nfo:
+            write_nfo(
+                data, mp4.with_suffix(".nfo"), "folder" if args.folder else "file"
             )
-            if not video_file:
-                logger.warning(f"在 {i} 中找不到视频文件")
-                continue
-
-            if args.folder:
-                folder = args.output / filtered_title
-                mp4 = folder / (filtered_part_title + ".mp4")
-                ass = folder / (filtered_part_title + ".ass")
-
-                if not folder.exists():
-                    folder.mkdir(parents=True)
-
-                audio_file = search_file(i, "audio.m4s")
-                if not isinstance(video_file, list):
-                    if not audio_file:
-                        cmd.append(f'{ffmpeg_cmd} -i "{video_file}" -c copy "{mp4}"')
-                    else:
-                        cmd.append(
-                            f'{ffmpeg_cmd} -i "{video_file}" -i "{audio_file}" -c copy "{mp4}"'
-                        )
-                else:  # blv
-                    input_files = " ".join(f'-i "{i}"' for i in video_file)
-                    cmd.append(f"{ffmpeg_cmd} {input_files} -c copy {mp4}")
-
-                if args.danmaku:
-                    danmaku_file = search_file(i, "danmaku.xml")
-                    if not danmaku_file:
-                        logger.info(f"在 {i} 中找不到弹幕文件")
-                        continue
-                    cmd.append(
-                        f'{danmaku2ass} "{danmaku_file}" -s {json_data["page_data"]["width"]}x{json_data["page_data"]["height"]} -fn "微软雅黑" -fs 48 -a 0.8 -dm 5 -ds 5 -o "{ass}"'
-                    )
-                if args.nfo:
-                    write_nfo(
-                        json_data, folder / (filtered_part_title + ".nfo")
-                    )
-            else:
-                if json_data.get("type_tag") == "64":
-                    mp4 = args.output / (filtered_part_title + ".mp4")
-                    ass = args.output / (filtered_part_title + ".ass")
-                else:
-                    mp4 = args.output / (
-                        filtered_title + "-" + filtered_part_title + ".mp4"
-                    )
-                    ass = args.output / (
-                        filtered_title + "-" + filtered_part_title + ".ass"
-                    )
-                if not isinstance(video_file, list):
-                    audio_file = search_file(i, "audio.m4s")
-                    if not audio_file:
-                        cmd.append(f'{ffmpeg_cmd} -i "{video_file}" -c copy "{mp4}"')
-                    else:
-                        cmd.append(
-                            f'{ffmpeg_cmd} -i "{video_file}" -i "{audio_file}" -c copy "{mp4}"'
-                        )
-                else:
-                    input_files = " ".join(f'-i "{i}"' for i in video_file)
-                    cmd.append(f"{ffmpeg_cmd} {input_files} -c copy {mp4}")
-                if args.danmaku:
-                    danmaku_file = search_file(i, "danmaku.xml")
-                    if not danmaku_file:
-                        logger.info(f"在 {i} 中找不到弹幕文件")
-                        continue
-                    cmd.append(
-                        f'{danmaku2ass} "{danmaku_file}" -s {json_data["page_data"]["width"]}x{json_data["page_data"]["height"]} -fn "微软雅黑" -fs 48 -a 0.8 -dm 5 -ds 5 -o "{ass}"'
-                    )
-                if args.nfo:
-                    write_nfo(json_data, args.output / (filtered_title + ".nfo"),'file')
-        return cmd
-    except Exception as e:
-        logger.error(f"生成合并视频命令时出错: {e}")
-        return []  # 确保始终返回一个列表
+    return cmds
 
 
-def run_command(command: str):
+def run_command(cmd: list[str]):
+    thread_name = threading.current_thread().name
+    logger.debug(f"[{thread_name}] 开始执行命令: {' '.join(cmd)}")
     try:
         subprocess.run(
-            command,
-            shell=True,
+            cmd,
+            check=True,
             capture_output=True,
             text=True,
-            check=True,
-            encoding="UTF-8",
+            encoding="utf-8",
             errors="ignore",
         )
-        print(command.replace(ffmpeg_cmd, "ffmpeg"))
+        disp = " ".join([("ffmpeg" if c == ffmpeg_path else c) for c in cmd])
+        logger.debug(f"[{thread_name}] 命令执行完成: {disp}")
     except subprocess.CalledProcessError as e:
-        logger.error(f"{command}\n{e.stderr}")
+        logger.error(f"[{thread_name}] 执行失败: {e.stderr}")
 
 
-logger.info(f"开始处理视频文件: {args.file}")
+logger.info(f"开始处理: {args.file}")
 if not args.file.exists():
     logger.error(f"路径不存在: {args.file}")
-    exit(1)
-
-all_folder = dir_folder(args.file)
-logger.info(f"共发现{len(all_folder)}个视频组")
-
-if not Path(args.output).exists():
-    Path(args.output).mkdir(parents=True)
-
-for i in all_folder:
-    buffer = generate_merge_video(i)
-    if buffer and len(buffer) > 0:  # 确保 buffer 不是 None 或空列表
-        with ThreadPoolExecutor(max_workers=args.thread) as executor:
-            executor.map(run_command, buffer)
-    else:
-        logger.warning(f"目录 {i} 没有生成任何命令")
+    sys.exit(1)
+tasks = []
+for grp in dir_folder(args.file):
+    tasks.extend(generate_merge_video(grp))
+with ThreadPoolExecutor(max_workers=args.thread) as ex:
+    ex.map(run_command, tasks)
