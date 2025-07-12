@@ -11,7 +11,6 @@ import shutil
 import xml.etree.ElementTree as ET
 from curl_cffi import requests
 import sys
-import threading
 
 # 初始化日志
 logger.remove()
@@ -119,7 +118,7 @@ def write_nfo(data: dict, path: Path, mode: str = "folder"):
     ET.SubElement(movie, "title").text = data["title"]
     credits = ET.SubElement(movie, "credits")
     credits.text = (
-        f"{data.get('owner_name', 'UNKNOWN')}[{data.get('owner_id', '')}]"
+        f"{data.get('owner_name', 'UNKNOWN')}[{data.get('owner_id', '')} ]"
         if data.get("owner_id")
         else "UNKNOWN"
     )
@@ -215,8 +214,6 @@ def generate_merge_video(group_dir: Path) -> list[list[str]]:
 
 
 def run_command(cmd: list[str]):
-    thread_name = threading.current_thread().name
-    logger.debug(f"[{thread_name}] 开始执行命令: {' '.join(cmd)}")
     try:
         subprocess.run(
             cmd,
@@ -226,10 +223,10 @@ def run_command(cmd: list[str]):
             encoding="utf-8",
             errors="ignore",
         )
-        disp = " ".join([("ffmpeg" if c == ffmpeg_path else c) for c in cmd])
-        logger.debug(f"[{thread_name}] 命令执行完成: {disp}")
+        disp = " ".join(["ffmpeg" if c == ffmpeg_path else c for c in cmd])
+        print(disp)
     except subprocess.CalledProcessError as e:
-        logger.error(f"[{thread_name}] 执行失败: {e.stderr}")
+        logger.error(f"执行失败: {e.stderr}")
 
 
 logger.info(f"开始处理: {args.file}")
