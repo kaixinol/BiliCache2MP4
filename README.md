@@ -1,5 +1,7 @@
 # BiliCache2MP4
 
+GUI套壳：https://github.com/kaixinol/BiliCache2MP4-GUI
+
 哔哩哔哩 BiliBili 视频缓存的\*.m4s 文件批量转换为.mp4 文件工具。
 
 - [x] 支持同时将弹幕转换
