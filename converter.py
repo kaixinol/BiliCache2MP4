@@ -5,17 +5,72 @@ import multiprocessing
 from pathlib import Path
 import re
 import argparse
-from loguru import logger
 import subprocess
 import shutil
 import xml.etree.ElementTree as ET
-from curl_cffi import requests
 import sys
 
-# 初始化日志
-logger.remove()
-logger.add(sys.stderr, level="DEBUG", diagnose=True, backtrace=True)
+# ---------------------------
+# logger fallback
+# ---------------------------
+try:
+    from loguru import logger
+    logger.remove()
+    logger.add(sys.stderr, level="DEBUG", diagnose=True, backtrace=True)
+except ImportError:
+    import logging
 
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format="%(asctime)s | %(levelname)s | %(message)s"
+    )
+    logger = logging.getLogger("fallback")
+
+# ---------------------------
+# requests fallback
+# ---------------------------
+try:
+    from curl_cffi import requests
+except ImportError:
+    import urllib.request
+    import urllib.parse
+
+    class SimpleResponse:
+        def __init__(self, resp):
+            self._resp = resp
+            self.status_code = resp.getcode()
+            self.headers = dict(resp.headers)
+            self._content = resp.read()
+
+        @property
+        def content(self):
+            return self._content
+
+        @property
+        def text(self):
+            return self._content.decode("utf-8", errors="ignore")
+
+        def json(self):
+            return json.loads(self.text)
+
+    class SimpleRequests:
+        @staticmethod
+        def get(url, headers=None, params=None):
+            if params:
+                url += "?" + urllib.parse.urlencode(params)
+            req = urllib.request.Request(url, headers=headers or {})
+            resp = urllib.request.urlopen(req)
+            return SimpleResponse(resp)
+
+        @staticmethod
+        def post(url, data=None, headers=None):
+            if isinstance(data, dict):
+                data = urllib.parse.urlencode(data).encode()
+            req = urllib.request.Request(url, data=data, headers=headers or {})
+            resp = urllib.request.urlopen(req)
+            return SimpleResponse(resp)
+
+    requests = SimpleRequests()
 # 参数解析
 parser = argparse.ArgumentParser()
 parser.add_argument(
